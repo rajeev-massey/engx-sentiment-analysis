@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from pyspark.sql import SparkSession
+#ML Libraries from py
 from pyspark.ml.feature import StringIndexer, Tokenizer, StopWordsRemover, HashingTF, IDF
 from pyspark.ml.classification import LogisticRegression, NaiveBayes
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
@@ -7,6 +10,11 @@ from pyspark.ml.pipeline import Pipeline
 
 class SparkMLSentiment:
     def __init__(self, config):
+        """
+        Initializes the SparkMLSentiment class with configuration settings.
+
+        :param config: A dictionary containing configuration settings for the Spark session and other parameters.
+        """
         self.spark = self._init_spark_session(config)
         self.config = config
         self.text_column = "review"
@@ -14,6 +22,12 @@ class SparkMLSentiment:
         self.indexed_label_column = "indexedLabel"
 
     def _init_spark_session(self, config):
+        """
+       Initializes and returns a Spark session based on the provided configuration.
+
+       :param config: Configuration dictionary for setting up the Spark session.
+       :return: A SparkSession object.
+       """
         spark = SparkSession.builder \
             .appName(config.get('spark')['config']['appName']) \
             .config("spark.executor.memory", config.get('spark')['config']['executor_memory']) \
@@ -25,11 +39,23 @@ class SparkMLSentiment:
         return spark
 
     def load_data(self, data_path):
+        """
+        Loads data from a specified path into a Spark DataFrame, applying basic preprocessing like dropping NA values.
+
+        :param data_path: The path to the data file.
+        :return: A Spark DataFrame containing the loaded data.
+        """
         dataset = self.spark.read.csv(data_path, header=True, inferSchema=True)
         dataset = dataset.dropna().limit(self.config.get('common')['limit'])
         return dataset
 
     def preprocess(self, dataset):
+        """
+        Preprocesses the dataset by tokenizing text, removing stopwords, and extracting TF-IDF features.
+
+        :param dataset: The Spark DataFrame to preprocess.
+        :return: A DataFrame with the preprocessing pipeline applied.
+        """
         indexer = StringIndexer(inputCol=self.label_column, outputCol=self.indexed_label_column)
         indexed = indexer.fit(dataset).transform(dataset)
 
@@ -43,6 +69,12 @@ class SparkMLSentiment:
         return model_pipeline.transform(indexed)
 
     def train_models(self, dataset):
+        """
+       Trains Logistic Regression and Naive Bayes models on the dataset.
+
+       :param dataset: The preprocessed dataset to train the models on.
+       :return: The accuracy of the Logistic Regression and Naive Bayes models.
+       """
         train_data, test_data = dataset.randomSplit([0.8, 0.2], seed=12345)
 
         lr = LogisticRegression(labelCol=self.indexed_label_column, featuresCol="idf_features")
@@ -62,6 +94,12 @@ class SparkMLSentiment:
         return self.lr_accuracy, self.nb_accuracy
 
     def predict_lr(self, text):
+        """
+        Predicts the sentiment of the given text using the trained Logistic Regression model.
+
+        :param text:
+        :return:
+        """
         dataset = self.spark.createDataFrame([(text,)], ["review"])
         processed_dataset = self.preprocess(dataset)
         prediction = self.lr_model.transform(processed_dataset)
@@ -70,6 +108,12 @@ class SparkMLSentiment:
         return sentiment
 
     def predict_nb(self, text):
+        """
+        Predicts the sentiment of the given text using the trained Naive Bayes model.
+
+        :param text:
+        :return:
+        """
         dataset = self.spark.createDataFrame([(text,)], ["review"])
         processed_dataset = self.preprocess(dataset)
         prediction = self.nb_model.transform(processed_dataset)
@@ -80,7 +124,7 @@ class SparkMLSentiment:
 if __name__ == "__main__":
     config = {
         'common': {
-            'limit': 1000
+            'limit': 5000
         },
         'spark': {
             'config': {
@@ -96,11 +140,22 @@ if __name__ == "__main__":
 
     spark_sentiment = SparkMLSentiment(config)
     dataset = spark_sentiment.load_data("../data/reviews.csv")
+
+    start_time = datetime.now()
+
     processed_dataset = spark_sentiment.preprocess(dataset)
     lr_accuracy, nb_accuracy = spark_sentiment.train_models(processed_dataset)
+
+    end_time = datetime.now()
+
 
     print(f"Logistic Regression Accuracy: {lr_accuracy}%")
     print(f"Naive Bayes Accuracy: {nb_accuracy}%")
 
-    # Stop the Spark session
+    print(f"Process started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Process ended at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Total time taken: {end_time - start_time}")
+
+
+# Stop the Spark session
     spark_sentiment.spark.stop()
